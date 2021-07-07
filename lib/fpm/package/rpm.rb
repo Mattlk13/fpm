@@ -1,5 +1,5 @@
 require "fpm/package"
-require "backports"
+require "backports/latest"
 require "fileutils"
 require "find"
 require "arr-pm/file" # gem 'arr-pm'
@@ -190,14 +190,15 @@ class FPM::Package::RPM < FPM::Package
   # Replace ? with [?] to make rpm not use globs
   # Replace % with [%] to make rpm not expand macros
   def rpm_fix_name(name)
-    name = name.gsub(/(\ |\[|\]|\*|\?|\%|\$)/, {
+    name = name.gsub(/(\ |\[|\]|\*|\?|\%|\$|')/, {
       ' ' => '?',
       '%' => '[%]',
       '$' => '[$]',
       '?' => '[?]',
       '*' => '[*]',
       '[' => '[\[]',
-      ']' => '[\]]'
+      ']' => '[\]]',
+      "'" => "\\'",
     })
   end
 
@@ -239,6 +240,8 @@ class FPM::Package::RPM < FPM::Package
         return %x{uname -m}.chomp   # default to current arch
       when "amd64" # debian and redhat disagree on architecture names
         return "x86_64"
+      when "arm64" # debian and redhat disagree on architecture names
+        return "aarch64"
       when "native"
         return %x{uname -m}.chomp   # 'native' is current arch
       when "all"

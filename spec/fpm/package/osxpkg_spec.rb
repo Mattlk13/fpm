@@ -34,8 +34,13 @@ describe FPM::Package::OSXpkg do
     end
   end
 
-  describe "#output", :if => platform_is_darwin do
+  describe "#output" do
+    before do
+      skip("Current platform is not darwin/osx") unless platform_is_darwin
+    end
+
     before :all do
+      skip("Current platform is not darwin/osx") unless platform_is_darwin
       # output a package, use it as the input, set the subject to that input
       # package. This helps ensure that we can write and read packages
       # properly.
@@ -55,8 +60,8 @@ describe FPM::Package::OSXpkg do
     end
 
     after :all do
-      @original.cleanup
-      @input.cleanup
+      @original.cleanup if @original
+      @input.cleanup if @input
     end # after
 
     context "package attributes" do

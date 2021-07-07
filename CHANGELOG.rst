@@ -1,6 +1,46 @@
 Release Notes and Change Log
 ============================
 
+1.13.1 (July 6, 2021)
+^^^^^^^^^^^^^^^^^^^^^
+* deb: The `--provides` flag now allows for versions. Previously, fpm would
+  remove the version part of a provides field when generating deb packages.
+  (`#1788`_, `#1803`_; Jordan Sissel, Phil Schwartz, tympanix)
+* osxpkg: Update documentation to include installing `rpm` tools on OSX
+  (`#1797`_; allen joslin)
+
+1.13.0 (June 19, 2021)
+^^^^^^^^^^^^^^^^^^^^^^
+* Apple M1 users should now work (`#1772`_, `#1785`_, `#1786`_; Jordan Sissel)
+* Removed `ffi` ruby library as a dependency. This should make it easier to support a wider range of Ruby versions (Ruby 2.2, 3.0, etc) and platforms (like arm64, Apple M1, etc) in the future. (`#1785`_, `#1786`_; Jordan Sissel)
+* Now uses the correct architecture synonym for ARM 64 systems. Debian uses `arm64` as a synonym for what other systems call `aarch64` (linux kernel, RPM, Arch Linux). (`#1775`_; Steve Kamerman)
+* Docs: Fix a typo in an example (`#1785`_; Zoe O'Connell)
+* rpm: File paths can now contain single-quote characters (`#1774`_; Jordan Sissel)
+* rpm: Use correct SPEC syntax when using --after-upgrade or similar features (`#1761`_; Jo Vandeginste. Robert Fielding)
+* Ruby 3.0 support: Added `rexml` as a runtime dependency. In Ruby 2.0, `rexml` came by default, but in Ruby 3.0, `rexml` is now a bundled gem and some distributiosn do not include it by default. (`#1794`_; Jordan Sissel)
+* Fix error "git: not found (Git::GitExecuteError)". Now loads `git` library only when using git features. (`#1753`_, `#1748`_, `#1751`_, `#1766`_; Jordan Sissel, Cameron Nemo, Jason Rogers, Luke Short)
+* deb: Fix syntax error in `postinst` (`--after-install`) script. (`#1752`_, `#1749`_, `#1764`_; rmanus, Adam Mohammed, Elliot Murphy, kimw, Jordan Sissel)
+* deb: --deb-compression now uses the same compression and file suffix on the control.tar file (`#1760`_; Philippe Poilbarbe
+)
+
+
+1.12.0 (January 19, 2021)
+^^^^^^^^^^^^^^^^^^^^^^^^^
+
+* Pin ffi dependency to ruby ffi 1.12.x to try keeping fpm compatible with older/abandoned rubies like 2.0 and 2.1. (`#1709`_; Matt Patterson)
+* deb: New flag to add 'set -e' to all scripts. `--deb-maintainerscripts-force-errorchecks` which defaults to off. (`#1697`_; Andreas Ulm)
+* deb: Fix bug when converting rubygems to debs where certain constraints like `~>1` would generate a deb dependency that couldn't be satisfied. (`#1699`_; Vlastimil Holer)
+* deb: Fix error 'uninitialized constant FPM::Package::Deb::Zlib' (`#1739`_, `#1740`_; Federico Lancerin)
+* python: Prepend to PYTHONPATH instead of replacing it. This should help on platforms that rely heavily on PYTHONPATH, such as NixOSX (`#1711`_, `#1710`_; anarg)
+* python: Add `--python-trusted-host` flag which passes `--trusted-host` flag to `pip` (`#1737`_; Vladimir Ponarevsky)
+* Documentation improvements (`#1724`_, `#1738`_, `#1667`_, `#1636`_)
+* Dockerfile updated to Alpine 3.12 (`#1745`_; Cameron Nemo)
+* Remove the 'backports' deprecation warning (`#1727`_; Jose Galvez)
+* sh: Performance improvement when printing package metadata (`#1729`_; James Logsdon, Ed Healy)
+* rpm: Add support for `xzmt` compression (multithreaded xz compressor) to help when creating very large packages (several gigabytes). (`#1447`_, `#1419`_; amnobc)
+* rpm: Add `--rpm-macro-expansion` flag to enable macro expansion in scripts during rpmbuild. See https://rpm.org/user_doc/scriptlet_expansion.html for more details. (`#1642`_; juliantrzeciak)
+* deb: use correct control.tar filename (`#1668`_; Mike Perham)
+
 1.11.0 (January 30, 2019)
 ^^^^^^^^^^^^^^^^^^^^^^^^^
 

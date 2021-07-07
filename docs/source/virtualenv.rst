@@ -11,11 +11,12 @@ python dependencies separate from system python that you can then distribute.
 
 .. note::
    `virtualenv` support requires that you have `virtualenv` and  the
-   `virtualenv-tools` binary on your path.  This can usually be achieved with
-   `pip install virtualenv virtualenv-tools`.
+   `virtualenv-tools` binary on your path.  
+    - For python2 virtual environments, this can usually be achieved with `pip install virtualenv virtualenv-tools`. 
+    - For python3 virtual environments, use `pip install virtualenv-tools3` instead. 
 
 Example uses:
-=============
+-------------
 
 Build an rpm package for ansible::
 

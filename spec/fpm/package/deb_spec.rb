@@ -33,6 +33,11 @@ describe FPM::Package::Deb do
       expect(subject.architecture).to(be == "amd64")
     end
 
+    it "should convert aarch64 to arm64" do
+      subject.architecture = "aarch64"
+      expect(subject.architecture).to(be == "arm64")
+    end
+
     it "should convert noarch to all" do
       subject.architecture = "noarch"
       expect(subject.architecture).to(be == "all")
@@ -138,7 +143,7 @@ describe FPM::Package::Deb do
       original.architecture = "all"
       original.dependencies << "something > 10"
       original.dependencies << "hello >= 20"
-      original.provides << "#{original.name} = #{original.version}"
+      original.provides << "#{original.name} (= #{original.version})"
 
       # Test to cover PR#591 (fix provides names)
       original.provides << "Some-SILLY_name"
@@ -231,18 +236,17 @@ describe FPM::Package::Deb do
         end
       end
 
-      it "should ignore versions and conditions in 'provides' (#280)" do
-        # Provides is an array because rpm supports multiple 'provides'
-        insist { input.provides }.include?(original.name)
-      end
-
       it "should fix capitalization and underscores-to-dashes (#591)" do
         insist { input.provides }.include?("some-silly-name")
       end
     end # package attributes
 
     # This section mainly just verifies that 'dpkg-deb' can parse the package.
-    context "when read with dpkg", :if => have_dpkg_deb do
+    context "when read with dpkg" do
+      before do
+        skip("Missing dpkg-deb program") unless have_dpkg_deb
+      end
+
       def dpkg_field(field)
         return `dpkg-deb -f #{target} #{field}`.chomp
       end # def dpkg_field
@@ -375,7 +379,11 @@ describe FPM::Package::Deb do
       FileUtils.rm_r staging_path if File.exist? staging_path
     end # after
 
-    context "when run against lintian", :if => have_lintian do
+    context "when run against lintian" do
+      before do
+        skip("Missing lintian program") unless have_lintian 
+      end
+
       lintian_errors_to_ignore = [
         "no-copyright-file",
         "script-in-etc-init.d-not-registered-via-update-rc.d"
@@ -440,4 +448,33 @@ describe FPM::Package::Deb do
       expect(FileUtils.compare_file(target, target + '.orig')).to be true
     end
   end # #reproducible
+
+  describe "compression" do
+    {
+      "bzip2" => "bz2",
+      "xz" => "xz",
+      "gz" => "gz"
+    }.each do |flag,suffix|
+      context "when --deb-compression is #{flag}" do
+        let(:target) { Stud::Temporary.pathname + ".deb" }
+        after do
+          subject.cleanup
+          File.unlink(target) if File.exist?(target)
+        end
+
+        before do
+          deb = FPM::Package::Deb.new
+          deb.name = "name"
+          deb.attributes[:deb_compression] = flag
+          deb.output(target)
+        end
+
+        it "should use #{suffix} for data and control files" do
+          list = `ar t #{target}`.split("\n")
+          insist { list }.include?("control.tar.#{suffix}")
+          insist { list }.include?("data.tar.#{suffix}")
+        end
+      end
+    end
+  end
 end # describe FPM::Package::Deb

@@ -1,27 +1,20 @@
 require "fpm/namespace"
-require "childprocess"
-require "ffi"
 require "fileutils"
 
 # Some utility functions
 module FPM::Util
-  extend FFI::Library
-  ffi_lib FFI::Library::LIBC
-
-  # mknod is __xmknod in glibc a wrapper around mknod to handle
-  # various stat struct formats. See bits/stat.h in glibc source
-  begin
-    attach_function :mknod, :mknod, [:string, :uint, :ulong], :int
-  rescue FFI::NotFoundError
-    # glibc/io/xmknod.c int __xmknod (int vers, const char *path, mode_t mode, dev_t *dev)
-    attach_function :xmknod, :__xmknod, [:int, :string, :uint, :pointer], :int
-  end
 
   # Raised if safesystem cannot find the program to run.
   class ExecutableNotFound < StandardError; end
 
   # Raised if a safesystem program exits nonzero
   class ProcessFailed < StandardError; end
+
+  # Raised when a named pipe cannot be copied due to missing functions in fpm and ruby.
+  class NamedPipeCannotBeCopied < StandardError; end
+
+  # Raised when an attempting to copy a special file such as a block device.
+  class UnsupportedSpecialFile < StandardError; end
 
   # Is the given program in the system's PATH?
   def program_in_path?(program)
@@ -146,31 +139,22 @@ module FPM::Util
 
     stdout_r, stdout_w = IO.pipe
     stderr_r, stderr_w = IO.pipe
+    stdin_r, stdin_w = IO.pipe
 
-    process = ChildProcess.build(*args2)
-    process.environment.merge!(env)
-
-    process.io.stdout = stdout_w
-    process.io.stderr = stderr_w
-
-    if block_given? and opts[:stdin]
-      process.duplex = true
-    end
-
-    process.start
+    pid = Process.spawn(env, *args2, :out => stdout_w, :err => stderr_w, :in => stdin_r)
 
     stdout_w.close; stderr_w.close
-    logger.debug("Process is running", :pid => process.pid)
+    logger.debug("Process is running", :pid => pid)
     if block_given?
       args3 = []
       args3.push(process)           if opts[:process]
-      args3.push(process.io.stdin)  if opts[:stdin]
+      args3.push(stdin_w)           if opts[:stdin]
       args3.push(stdout_r)          if opts[:stdout]
       args3.push(stderr_r)          if opts[:stderr]
 
       yield(*args3)
 
-      process.io.stdin.close        if opts[:stdin] and not process.io.stdin.closed?
+      stdin_w_close                 if opts[:stdin] and not stdin_w.closed?
       stdout_r.close                unless stdout_r.closed?
       stderr_r.close                unless stderr_r.closed?
     else
@@ -179,9 +163,10 @@ module FPM::Util
       logger.pipe(stdout_r => :info, stderr_r => :info)
     end
 
-    process.wait if process.alive?
+    Process.waitpid(pid)
+    status = $?
 
-    return process.exit_code
+    return status.exitstatus
   end # def execmd
 
   # Run a command safely in a way that gets reports useful errors.
@@ -316,19 +301,6 @@ module FPM::Util
     return @@tar_cmd_deterministic
   end
 
-  # wrapper around mknod ffi calls
-  def mknod_w(path, mode, dev)
-    rc = -1
-    case %x{uname -s}.chomp
-    when 'Linux'
-      # bits/stat.h #define _MKNOD_VER_LINUX  0
-      rc = xmknod(0, path, mode, FFI::MemoryPointer.new(dev))
-    else
-      rc = mknod(path, mode, dev)
-    end
-    rc
-  end
-
   def copy_metadata(source, destination)
     source_stat = File::lstat(source)
     dest_stat = File::lstat(destination)
@@ -354,10 +326,21 @@ module FPM::Util
 
   def copy_entry(src, dst, preserve=false, remove_destination=false)
     case File.ftype(src)
-    when 'fifo', 'characterSpecial', 'blockSpecial', 'socket'
-      st = File.stat(src)
-      rc = mknod_w(dst, st.mode, st.dev)
-      raise SystemCallError.new("mknod error", FFI.errno) if rc == -1
+    when 'fifo'
+      if File.respond_to?(:mkfifo)
+        File.mkfifo(dst)
+      elsif program_exists?("mkfifo")
+        safesystem("mkfifo", dst)
+      else
+        raise NamedPipeCannotBeCopied("Unable to copy. Cannot find program 'mkfifo' and Ruby is missing the 'File.mkfifo' method: #{src}")
+      end
+    when 'socket'
+      require "socket"
+      # In 2019, Ruby's FileUtils added this as a way to "copy" a unix socket.
+      # Reference: https://github.com/ruby/fileutils/pull/36/files
+      UNIXServer.new(dst).close()
+    when 'characterSpecial', 'blockSpecial'
+      raise  UnsupportedSpecialFile.new("File is device which fpm doesn't know how to copy (#{File.ftype(src)}): #{src}")
     when 'directory'
       FileUtils.mkdir(dst) unless File.exists? dst
     else

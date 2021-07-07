@@ -3,9 +3,10 @@ require "fpm/namespace"
 require "fpm/package"
 require "fpm/errors"
 require "fpm/util"
-require "backports"
+require "backports/latest"
 require "fileutils"
 require "digest"
+require "zlib"
 
 # Support for debian packages (.deb files)
 #
@@ -177,7 +178,7 @@ class FPM::Package::Deb < FPM::Package
   end
 
   option "--systemd", "FILEPATH", "Add FILEPATH as a systemd script",
-	:multivalued => true do |file|
+    :multivalued => true do |file|
     next File.expand_path(file)
   end
 
@@ -192,6 +193,11 @@ class FPM::Package::Deb < FPM::Package
     "(a.k.a. postrm purge within apt-get purge)" do |val|
     File.expand_path(val) # Get the full path to the script
   end # --after-purge
+
+  option "--maintainerscripts-force-errorchecks", :flag ,
+    "Activate errexit shell option according to lintian. " \
+    "https://lintian.debian.org/tags/maintainer-script-ignores-errors.html",
+    :default => false
 
   def initialize(*args)
     super(*args)
@@ -222,6 +228,9 @@ class FPM::Package::Deb < FPM::Package
     when "x86_64"
       # Debian calls x86_64 "amd64"
       @architecture = "amd64"
+    when "aarch64"
+      # Debian calls aarch64 "arm64"
+      @architecture = "arm64"
     when "noarch"
       # Debian calls noarch "all"
       @architecture = "all"
@@ -582,15 +591,19 @@ class FPM::Package::Deb < FPM::Package
     case self.attributes[:deb_compression]
       when "gz", nil
         datatar = build_path("data.tar.gz")
+        controltar = build_path("control.tar.gz")
         compression = "-z"
       when "bzip2"
         datatar = build_path("data.tar.bz2")
+        controltar = build_path("control.tar.bz2")
         compression = "-j"
       when "xz"
         datatar = build_path("data.tar.xz")
+        controltar = build_path("control.tar.xz")
         compression = "-J"
       when "none"
         datatar = build_path("data.tar")
+        controltar = build_path("control.tar")
         compression = ""
       else
         raise FPM::InvalidPackageConfiguration,
@@ -610,7 +623,7 @@ class FPM::Package::Deb < FPM::Package
     # the 'debian-binary' file has to be first
     File.expand_path(output_path).tap do |output_path|
       ::Dir.chdir(build_path) do
-        safesystem(*ar_cmd, output_path, "debian-binary", "control.tar.gz", datatar)
+        safesystem(*ar_cmd, output_path, "debian-binary", controltar, datatar)
       end
     end
 
@@ -674,6 +687,19 @@ class FPM::Package::Deb < FPM::Package
         File.unlink(changelog_path)
       end
     end
+
+    if origin == FPM::Package::Gem
+      # fpm's gem input will have provides as "rubygem-name = version"
+      # and we need to convert this to Debian-style "rubygem-name (= version)"
+      self.provides = self.provides.collect do |provides|
+        m = /^(#{attributes[:gem_package_name_prefix]})-([^\s]+)\s*=\s*(.*)$/.match(provides)
+        if m
+          "#{m[1]}-#{m[2]} (= #{m[3]})"
+        else
+          provides
+        end
+      end
+    end
   end # def converted_from
 
   def debianize_op(op)
@@ -715,8 +741,13 @@ class FPM::Package::Deb < FPM::Package
       name, version = dep.gsub(/[()~>]/, "").split(/ +/)[0..1]
       nextversion = version.split(".").collect { |v| v.to_i }
       l = nextversion.length
-      nextversion[l-2] += 1
-      nextversion[l-1] = 0
+      if l > 1
+        nextversion[l-2] += 1
+        nextversion[l-1] = 0
+      else
+        # Single component versions ~> 1
+        nextversion[l-1] += 1
+      end
       nextversion = nextversion.join(".")
       return ["#{name} (>= #{version})", "#{name} (<< #{nextversion})"]
     elsif (m = dep.match(/(\S+)\s+\(!= (.+)\)/))
@@ -756,6 +787,11 @@ class FPM::Package::Deb < FPM::Package
       logger.warn("Replacing 'provides' underscores with dashes in '#{provides}' because " \
                    "debs don't like underscores")
       provides = provides.gsub("_", "-")
+    end
+
+    if m = provides.match(/^([A-Za-z0-9_-]+)\s*=\s*(\d+.*$)/)
+      logger.warn("Replacing 'provides' entry #{provides} with syntax 'name (= version)'")
+      provides = "#{m[1]} (= #{m[2]})"
     end
     return provides.rstrip
   end
